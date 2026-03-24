@@ -1,4 +1,4 @@
-import java.util.HashMap;
+import java.util.*;
 
 // Abstract Room Class
 abstract class Room {
@@ -38,45 +38,92 @@ class SuiteRoom extends Room {
     }
 }
 
-// 🔥 NEW: Inventory Class (UC3 Core)
+// UC3: Inventory
 class RoomInventory {
     private HashMap<String, Integer> inventory;
 
     public RoomInventory() {
         inventory = new HashMap<>();
-
-        // Initialize availability
         inventory.put("Single", 5);
         inventory.put("Double", 3);
         inventory.put("Suite", 2);
     }
 
-    // Get availability
     public int getAvailability(String type) {
         return inventory.getOrDefault(type, 0);
     }
+}
 
-    // Update availability
-    public void updateAvailability(String type, int count) {
-        inventory.put(type, count);
+// UC4: Search Service (READ ONLY)
+class RoomSearchService {
+    public void searchAvailableRooms(RoomInventory inventory,
+                                     Room single,
+                                     Room dbl,
+                                     Room suite) {
+
+        System.out.println("Available Rooms for Booking\n");
+
+        if (inventory.getAvailability("Single") > 0) {
+            System.out.println("Single Room:");
+            single.displayDetails();
+            System.out.println("Available Rooms: " + inventory.getAvailability("Single") + "\n");
+        }
+
+        if (inventory.getAvailability("Double") > 0) {
+            System.out.println("Double Room:");
+            dbl.displayDetails();
+            System.out.println("Available Rooms: " + inventory.getAvailability("Double") + "\n");
+        }
+
+        if (inventory.getAvailability("Suite") > 0) {
+            System.out.println("Suite Room:");
+            suite.displayDetails();
+            System.out.println("Available Rooms: " + inventory.getAvailability("Suite"));
+        }
+    }
+}
+
+// 🔥 UC5: Reservation (Booking Request)
+class Reservation {
+    private String guestName;
+    private String roomType;
+
+    public Reservation(String guestName, String roomType) {
+        this.guestName = guestName;
+        this.roomType = roomType;
     }
 
-    // Display all inventory
-    public void displayInventory(Room single, Room dbl, Room suite) {
+    public String getGuestName() {
+        return guestName;
+    }
 
-        System.out.println("Hotel Room Inventory Status\n");
+    public String getRoomType() {
+        return roomType;
+    }
+}
 
-        System.out.println("Single Room:");
-        single.displayDetails();
-        System.out.println("Available Rooms: " + getAvailability("Single") + "\n");
+// 🔥 UC5: Booking Queue (FIFO)
+class BookingRequestQueue {
+    private Queue<Reservation> queue;
 
-        System.out.println("Double Room:");
-        dbl.displayDetails();
-        System.out.println("Available Rooms: " + getAvailability("Double") + "\n");
+    public BookingRequestQueue() {
+        queue = new LinkedList<>();
+    }
 
-        System.out.println("Suite Room:");
-        suite.displayDetails();
-        System.out.println("Available Rooms: " + getAvailability("Suite"));
+    // Add request
+    public void addRequest(Reservation reservation) {
+        queue.add(reservation);
+        System.out.println("Request added: " + reservation.getGuestName() +
+                " -> " + reservation.getRoomType());
+    }
+
+    // Display queue
+    public void displayQueue() {
+        System.out.println("\nBooking Request Queue (FIFO Order):\n");
+
+        for (Reservation r : queue) {
+            System.out.println(r.getGuestName() + " requested " + r.getRoomType());
+        }
     }
 }
 
@@ -84,15 +131,28 @@ class RoomInventory {
 public class BookMyStayApp {
     public static void main(String[] args) {
 
-        // Create room objects (same as UC2)
+        // Rooms
         Room single = new SingleRoom();
         Room dbl = new DoubleRoom();
         Room suite = new SuiteRoom();
 
-        // 🔥 Use centralized inventory
+        // Inventory
         RoomInventory inventory = new RoomInventory();
 
-        // Display inventory
-        inventory.displayInventory(single, dbl, suite);
+        // Search (UC4)
+        RoomSearchService search = new RoomSearchService();
+        search.searchAvailableRooms(inventory, single, dbl, suite);
+
+        // 🔥 Booking Requests (UC5)
+        BookingRequestQueue bookingQueue = new BookingRequestQueue();
+
+        // Simulating guest requests
+        bookingQueue.addRequest(new Reservation("Rahul", "Single"));
+        bookingQueue.addRequest(new Reservation("Arun", "Double"));
+        bookingQueue.addRequest(new Reservation("Priya", "Suite"));
+        bookingQueue.addRequest(new Reservation("Kiran", "Single"));
+
+        // Display queue
+        bookingQueue.displayQueue();
     }
 }
