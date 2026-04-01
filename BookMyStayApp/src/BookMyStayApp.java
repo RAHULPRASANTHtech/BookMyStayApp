@@ -93,16 +93,17 @@ class Reservation {
 class BookingRequestQueue {
     private Queue<Reservation> queue = new LinkedList<>();
 
-    public void addRequest(Reservation r) {
+    public synchronized void addRequest(Reservation r) {
         queue.add(r);
-        System.out.println("Request Added: " + r.getGuestName() + " -> " + r.getRoomType());
+        System.out.println(Thread.currentThread().getName() +
+                " added: " + r.getGuestName() + " -> " + r.getRoomType());
     }
 
-    public Reservation getNextRequest() {
+    public synchronized Reservation getNextRequest() {
         return queue.poll();
     }
 
-    public boolean isEmpty() {
+    public synchronized boolean isEmpty() {
         return queue.isEmpty();
     }
 }
@@ -222,37 +223,43 @@ class BookingService {
 
         List<Reservation> confirmed = new ArrayList<>();
 
-        System.out.println("\nProcessing Bookings...\n");
+        while (true) {
 
-        while (!queue.isEmpty()) {
+            Reservation r;
 
-            Reservation r = queue.getNextRequest();
+            synchronized (queue) {
+                if (queue.isEmpty()) break;
+                r = queue.getNextRequest();
+            }
 
             try {
-                BookingValidator.validate(r, inventory);
+                synchronized (this) { // 🔥 CRITICAL SECTION
 
-                String roomId;
+                    BookingValidator.validate(r, inventory);
 
-                do {
-                    roomId = generateRoomId(r.getRoomType());
-                } while (allocatedRoomIds.contains(roomId));
+                    String roomId;
 
-                allocatedRoomIds.add(roomId);
+                    do {
+                        roomId = generateRoomId(r.getRoomType());
+                    } while (allocatedRoomIds.contains(roomId));
 
-                inventory.decreaseAvailability(r.getRoomType());
+                    allocatedRoomIds.add(roomId);
 
-                r.setRoomId(roomId);
-                confirmed.add(r);
+                    inventory.decreaseAvailability(r.getRoomType());
 
-                history.addBooking(r);
+                    r.setRoomId(roomId);
+                    confirmed.add(r);
+                    history.addBooking(r);
 
-                System.out.println("Booking Confirmed: "
-                        + r.getGuestName()
-                        + " -> " + r.getRoomType()
-                        + " | ID: " + roomId);
+                    System.out.println(Thread.currentThread().getName() +
+                            " CONFIRMED: " + r.getGuestName() +
+                            " -> " + r.getRoomType() +
+                            " | ID: " + roomId);
+                }
 
             } catch (InvalidBookingException e) {
-                System.out.println("Booking Error: " + e.getMessage());
+                System.out.println(Thread.currentThread().getName() +
+                        " ERROR: " + e.getMessage());
             }
         }
 
@@ -272,7 +279,24 @@ class CancellationService {
         this.inventory = inventory;
         this.history = history;
     }
+    class ConcurrentBookingProcessor implements Runnable {
 
+        private BookingRequestQueue queue;
+        private BookingService bookingService;
+
+        public ConcurrentBookingProcessor(BookingRequestQueue queue, BookingService bookingService) {
+            this.queue = queue;
+            this.bookingService = bookingService;
+        }
+
+        @Override
+        public void run() {
+            // Each thread processes bookings safely
+            synchronized (bookingService) {
+                bookingService.processBookings(queue);
+            }
+        }
+    }
     public void cancelBooking(String roomId, String roomType) {
 
         System.out.println("\nAttempting Cancellation: " + roomId);
@@ -305,14 +329,38 @@ public class BookMyStayApp {
         search.searchAvailableRooms(inventory,
                 new SingleRoom(), new DoubleRoom(), new SuiteRoom());
 
+// Shared queue
         BookingRequestQueue queue = new BookingRequestQueue();
 
+// Simulate multiple guests
         queue.addRequest(new Reservation("Rahul", "Single"));
+        queue.addRequest(new Reservation("Arun", "Double"));
         queue.addRequest(new Reservation("Priya", "Suite"));
+        queue.addRequest(new Reservation("Kiran", "Single"));
+        queue.addRequest(new Reservation("John", "Double"));
 
+// Shared services
         BookingHistory history = new BookingHistory();
+        BookingService bookingService = new BookingService(inventory, history);
 
-        BookingService service = new BookingService(inventory, history);
+// 🔥 MULTIPLE THREADS
+        Thread t1 = new Thread(new ConcurrentBookingProcessor(queue, bookingService), "Thread-1");
+        Thread t2 = new Thread(new ConcurrentBookingProcessor(queue, bookingService), "Thread-2");
+        Thread t3 = new Thread(new ConcurrentBookingProcessor(queue, bookingService), "Thread-3");
+
+// Start threads
+        t1.start();
+        t2.start();
+        t3.start();
+
+// Wait for completion
+        try {
+            t1.join();
+            t2.join();
+            t3.join();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
         List<Reservation> confirmed = service.processBookings(queue);
 
         // 🔥 UC10: Cancellation
