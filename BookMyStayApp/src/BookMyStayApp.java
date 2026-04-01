@@ -61,6 +61,11 @@ class RoomInventory {
 
         inventory.put(type, current - 1);
     }
+
+    // 🔥 UC10: increase availability (rollback)
+    public void increaseAvailability(String type) {
+        inventory.put(type, getAvailability(type) + 1);
+    }
 }
 
 // ================= UC5: RESERVATION =================
@@ -163,6 +168,22 @@ class BookingHistory {
     public List<Reservation> getAllBookings() {
         return history;
     }
+
+    // 🔥 UC10: remove booking
+    public boolean removeBooking(String roomId) {
+        Iterator<Reservation> it = history.iterator();
+
+        while (it.hasNext()) {
+            Reservation r = it.next();
+
+            if (r.getRoomId().equals(roomId)) {
+                it.remove();
+                return true;
+            }
+        }
+
+        return false;
+    }
 }
 
 // ================= UC8: REPORT =================
@@ -239,45 +260,36 @@ class BookingService {
     }
 }
 
-// ================= UC7: SERVICE =================
-class Service {
-    private String name;
-    private double price;
+// ================= UC10: CANCELLATION SERVICE =================
+class CancellationService {
 
-    public Service(String name, double price) {
-        this.name = name;
-        this.price = price;
+    private RoomInventory inventory;
+    private BookingHistory history;
+
+    private Stack<String> rollbackStack = new Stack<>();
+
+    public CancellationService(RoomInventory inventory, BookingHistory history) {
+        this.inventory = inventory;
+        this.history = history;
     }
 
-    public String getName() { return name; }
-    public double getPrice() { return price; }
-}
+    public void cancelBooking(String roomId, String roomType) {
 
-// ================= UC7: SERVICE MANAGER =================
-class AddOnServiceManager {
+        System.out.println("\nAttempting Cancellation: " + roomId);
 
-    private HashMap<String, List<Service>> map = new HashMap<>();
+        boolean exists = history.removeBooking(roomId);
 
-    public void addService(String id, Service s) {
-        map.putIfAbsent(id, new ArrayList<>());
-        map.get(id).add(s);
-    }
-
-    public void display(String id) {
-
-        System.out.println("\nServices for " + id);
-
-        List<Service> list = map.get(id);
-        if (list == null) return;
-
-        double total = 0;
-
-        for (Service s : list) {
-            System.out.println("- " + s.getName() + " : " + s.getPrice());
-            total += s.getPrice();
+        if (!exists) {
+            System.out.println("Cancellation Failed: Booking not found.");
+            return;
         }
 
-        System.out.println("Total: " + total);
+        rollbackStack.push(roomId);
+
+        inventory.increaseAvailability(roomType);
+
+        System.out.println("Cancellation Successful: " + roomId);
+        System.out.println("Rollback Stack: " + rollbackStack);
     }
 }
 
@@ -295,10 +307,7 @@ public class BookMyStayApp {
 
         BookingRequestQueue queue = new BookingRequestQueue();
 
-        // VALID + INVALID CASES
         queue.addRequest(new Reservation("Rahul", "Single"));
-        queue.addRequest(new Reservation("", "Double"));        // invalid
-        queue.addRequest(new Reservation("Test", "Luxury"));    // invalid
         queue.addRequest(new Reservation("Priya", "Suite"));
 
         BookingHistory history = new BookingHistory();
@@ -306,17 +315,18 @@ public class BookMyStayApp {
         BookingService service = new BookingService(inventory, history);
         List<Reservation> confirmed = service.processBookings(queue);
 
-        // UC7 Add-ons
-        AddOnServiceManager addOn = new AddOnServiceManager();
+        // 🔥 UC10: Cancellation
+        CancellationService cancelService = new CancellationService(inventory, history);
 
         if (!confirmed.isEmpty()) {
-            String id = confirmed.get(0).getRoomId();
-            addOn.addService(id, new Service("WiFi", 200));
-            addOn.addService(id, new Service("Breakfast", 300));
-            addOn.display(id);
+            Reservation r = confirmed.get(confirmed.size() - 1);
+            cancelService.cancelBooking(r.getRoomId(), r.getRoomType());
         }
 
-        // UC8 Report
+        // invalid cancellation
+        cancelService.cancelBooking("INVALID", "Single");
+
+        // Report
         BookingReportService report = new BookingReportService();
         report.generateReport(history.getAllBookings());
     }
